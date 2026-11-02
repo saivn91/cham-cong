@@ -1,0 +1,26 @@
+{
+  "name": "timekeeping-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "dev:web": "pnpm --filter @timekeeping/web dev",
+    "dev:worker": "pnpm --filter @timekeeping/worker dev",
+    "build": "pnpm --filter @timekeeping/shared build && pnpm --filter @timekeeping/web build && pnpm --filter @timekeeping/worker build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "db:types": "supabase gen types typescript --local > packages/shared/src/database.types.ts"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "supabase": "^2.12.1",
+    "typescript": "~5.7.3"
+  }
+}

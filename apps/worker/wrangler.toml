@@ -1,0 +1,12 @@
+name = "timekeeping-worker"
+main = "src/index.ts"
+compatibility_date = "2025-02-04"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+SUPABASE_URL = "https://your-project-ref.supabase.co"
+
+# Secrets to be set via `wrangler secret put <NAME>`:
+# - SUPABASE_ANON_KEY
+# - SUPABASE_SERVICE_ROLE_KEY
+# - ALLOWED_ORIGIN

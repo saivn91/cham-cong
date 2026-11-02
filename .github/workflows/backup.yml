@@ -1,0 +1,64 @@
+name: Weekly Database Backup to R2
+
+on:
+  schedule:
+    # 02:00 AM Vietnam Time (UTC+7) on Sunday / 19:00 UTC Saturday
+    - cron: '0 19 * * 0'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    name: pg_dump to Cloudflare R2
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+      R2_BUCKET: timekeeping-backup
+    steps:
+      - name: Install PostgreSQL 17 client & AWS CLI
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y curl ca-certificates gnupg lsb-release awscli
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc --fail \
+            https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] \
+            https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" \
+            | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Create compressed database dump
+        run: |
+          TIMESTAMP=$(date -u +"%Y%m%d_%H%M%S")
+          FILENAME="timekeeping_${TIMESTAMP}.dump.gz"
+          echo "BACKUP_FILE=${FILENAME}" >> $GITHUB_ENV
+          pg_dump --format=custom --no-owner --no-privileges "$SUPABASE_DB_URL" \
+            | gzip -9 > "${FILENAME}"
+          ls -lh "${FILENAME}"
+
+      - name: Upload backup to Cloudflare R2
+        run: |
+          aws s3 cp "${BACKUP_FILE}" \
+            "s3://${R2_BUCKET}/weekly/${BACKUP_FILE}" \
+            --endpoint-url "${R2_ENDPOINT}"
+
+      - name: Prune backups older than 12 weeks (keep latest 12)
+        run: |
+          FILES=$(aws s3 ls "s3://${R2_BUCKET}/weekly/" \
+            --endpoint-url "${R2_ENDPOINT}" \
+            | awk '{print $4}' \
+            | grep '^timekeeping_.*\.dump\.gz$' \
+            | sort -r)
+          COUNT=0
+          for FILE in $FILES; do
+            COUNT=$((COUNT + 1))
+            if [ $COUNT -gt 12 ]; then
+              echo "Pruning old backup: $FILE"
+              aws s3 rm "s3://${R2_BUCKET}/weekly/${FILE}" \
+                --endpoint-url "${R2_ENDPOINT}"
+            fi
+          done
