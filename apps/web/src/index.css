@@ -1,0 +1,171 @@
+/* Nạp Tailwind CSS v4 */
+@import "tailwindcss";
+/* Nạp cấu trúc và theme mặc định đúng theo gói FullCalendar v7 */
+@import "@fullcalendar/react/skeleton.css";
+@import "@fullcalendar/react/themes/classic/theme.css";
+@import "@fullcalendar/react/themes/classic/palette.css";
+
+/* Reset CSS cơ bản và làm mượt chữ toàn cục */
+@layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    min-height: 100%;
+    /* Bất biến iPad/Kiosk: Chặn cuộn nảy và thu phóng chạm đúp ngoài ý muốn */
+    overscroll-behavior: none;
+    touch-action: manipulation;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+.kiosk-shell {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.kiosk-shell input,
+.kiosk-shell textarea {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.safe-area-pad {
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
+}
+
+/* Tinh chỉnh FullCalendar để toolbar và nội dung lịch rõ ràng trên màn hình nhỏ */
+.shift-calendar-wrapper .fc {
+  --fc-border-color: #e5e7eb;
+  --fc-today-bg-color: rgba(239, 246, 255, 0.75);
+  --fc-neutral-bg-color: #f9fafb;
+  --fc-page-bg-color: #ffffff;
+  font-family: inherit;
+  font-size: 0.875rem;
+  color: #1f2937;
+}
+
+.shift-calendar-wrapper .fc .fc-toolbar.fc-header-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.875rem;
+}
+
+.shift-calendar-wrapper .fc .fc-toolbar-chunk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.shift-calendar-wrapper .fc .fc-toolbar-title {
+  margin: 0;
+  color: #111827;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.shift-calendar-wrapper .fc .fc-button {
+  display: inline-flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.375rem;
+  padding: 0.375rem 0.675rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  line-height: 1.2;
+  text-transform: none;
+  box-shadow: none;
+}
+
+.shift-calendar-wrapper .fc .fc-button-group > .fc-button {
+  border-radius: 0;
+}
+
+.shift-calendar-wrapper .fc .fc-button-group > .fc-button:first-child {
+  border-top-left-radius: 0.375rem;
+  border-bottom-left-radius: 0.375rem;
+}
+
+.shift-calendar-wrapper .fc .fc-button-group > .fc-button:last-child {
+  border-top-right-radius: 0.375rem;
+  border-bottom-right-radius: 0.375rem;
+}
+
+.shift-calendar-wrapper .fc .fc-col-header-cell-cushion {
+  padding: 0.5rem 0.25rem;
+  color: #374151;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.shift-calendar-wrapper .fc .fc-timegrid-slot-label-cushion,
+.shift-calendar-wrapper .fc .fc-daygrid-day-number {
+  color: #4b5563;
+  font-size: 0.75rem;
+  text-decoration: none;
+}
+
+.shift-calendar-wrapper .fc .fc-event {
+  overflow: hidden;
+  border-width: 1px 1px 1px 4px;
+  border-radius: 0.375rem;
+  padding: 0.125rem 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.25;
+  cursor: pointer;
+}
+
+.shift-calendar-wrapper .fc .fc-event-main {
+  overflow: hidden;
+  padding: 0.0625rem 0.125rem;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 639px) {
+  .shift-calendar-wrapper .fc .fc-toolbar-chunk:nth-child(2) {
+    order: -1;
+    flex: 1 1 100%;
+    justify-content: center;
+    padding-bottom: 0.125rem;
+    text-align: center;
+  }
+
+  .shift-calendar-wrapper .fc .fc-toolbar-title {
+    font-size: 0.95rem;
+  }
+
+  .shift-calendar-wrapper .fc .fc-button {
+    min-height: 2.125rem;
+    padding: 0.3125rem 0.5rem;
+    font-size: 0.75rem;
+  }
+
+  .shift-calendar-wrapper .fc .fc-col-header-cell-cushion {
+    padding: 0.375rem 0.125rem;
+    font-size: 0.6875rem;
+  }
+}

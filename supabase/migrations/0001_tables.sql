@@ -1,5 +1,7 @@
 -- Migration: 0001_tables.sql
--- Description: Core 14 tables for Attendance & Payroll System (PostgreSQL 17 / Supabase)
+-- Mô tả: 14 bảng cốt lõi cho Hệ thống Chấm công & Tính lương (PostgreSQL 17 / Supabase)
+
+-- === Nhóm 1: Tổ chức, Nhân sự & Phân quyền chi nhánh ===
 
 -- 1. branches
 CREATE TABLE IF NOT EXISTS public.branches (
@@ -10,20 +12,24 @@ CREATE TABLE IF NOT EXISTS public.branches (
     created_at timestamptz DEFAULT now()
 );
 
--- 2. employees
+-- 2. employees (1-1 với auth.users, lưu lương cơ bản & vai trò)
 CREATE TABLE IF NOT EXISTS public.employees (
     id uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    employee_code text UNIQUE,
+    employee_code text NOT NULL UNIQUE,
     full_name text,
     role text DEFAULT 'employee' CHECK (role IN ('employee', 'manager', 'admin')),
     hourly_rate numeric NOT NULL DEFAULT 0 CHECK (hourly_rate >= 0),
     fixed_allowance numeric NOT NULL DEFAULT 0 CHECK (fixed_allowance >= 0),
     is_active boolean DEFAULT true,
+    home_branch_id uuid REFERENCES public.branches(id) ON DELETE SET NULL,
     created_at timestamptz DEFAULT now(),
     updated_at timestamptz DEFAULT now()
 );
 
--- 3. employee_pins
+COMMENT ON COLUMN public.employees.home_branch_id IS
+    'Chi nhánh chính của nhân viên dùng cho tổ chức nhân sự và gợi ý mặc định khi xếp ca; không giới hạn việc làm ca/chấm công ở chi nhánh khác và không tự động cấp quyền Manager (quyền quản lý vẫn theo bảng manager_branches).';
+
+-- 3. employee_pins (Tách riêng để cô lập bảo mật mã PIN chấm công)
 CREATE TABLE IF NOT EXISTS public.employee_pins (
     employee_id uuid PRIMARY KEY REFERENCES public.employees(id) ON DELETE CASCADE,
     pin_hash text,
@@ -32,14 +38,16 @@ CREATE TABLE IF NOT EXISTS public.employee_pins (
     updated_at timestamptz DEFAULT now()
 );
 
--- 4. manager_branches
+-- 4. manager_branches (Quan hệ N-N: phân quyền Manager theo chi nhánh)
 CREATE TABLE IF NOT EXISTS public.manager_branches (
     manager_id uuid REFERENCES public.employees(id) ON DELETE CASCADE,
     branch_id uuid REFERENCES public.branches(id) ON DELETE CASCADE,
     PRIMARY KEY (manager_id, branch_id)
 );
 
--- 5. devices
+-- === Nhóm 2: Thiết bị Kiosk chấm công ===
+
+-- 5. devices (Thiết bị Kiosk gắn với tài khoản auth và chi nhánh)
 CREATE TABLE IF NOT EXISTS public.devices (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     auth_user_id uuid UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -49,7 +57,7 @@ CREATE TABLE IF NOT EXISTS public.devices (
     created_at timestamptz DEFAULT now()
 );
 
--- 6. device_pairings
+-- 6. device_pairings (Mã ghép nối Kiosk dùng 1 lần, có thời hạn)
 CREATE TABLE IF NOT EXISTS public.device_pairings (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     code_hash text UNIQUE NOT NULL,
@@ -59,17 +67,18 @@ CREATE TABLE IF NOT EXISTS public.device_pairings (
     created_at timestamptz DEFAULT now()
 );
 
--- 7. shift_templates
+-- === Nhóm 3: Lịch phân ca & Dữ liệu chấm công ===
+
+-- 7. shift_templates (Danh mục ca mẫu dùng chung toàn hệ thống, không gắn riêng từng chi nhánh)
 CREATE TABLE IF NOT EXISTS public.shift_templates (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    branch_id uuid REFERENCES public.branches(id),
     name text,
     start_time time NOT NULL,
     end_time time NOT NULL,
     created_at timestamptz DEFAULT now()
 );
 
--- 8. shifts
+-- 8. shifts (Ca làm việc dùng tstzrange để kiểm soát trùng lịch)
 CREATE TABLE IF NOT EXISTS public.shifts (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id uuid NOT NULL REFERENCES public.employees(id) ON DELETE CASCADE,
@@ -84,7 +93,7 @@ CREATE TABLE IF NOT EXISTS public.shifts (
     created_at timestamptz DEFAULT now()
 );
 
--- 9. punches
+-- 9. punches (Log chấm công bất biến, hỗ trợ đính chính qua corrects_punch_id hoặc hủy qua voided_at)
 CREATE TABLE IF NOT EXISTS public.punches (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id uuid NOT NULL REFERENCES public.employees(id),
@@ -101,7 +110,9 @@ CREATE TABLE IF NOT EXISTS public.punches (
     created_at timestamptz DEFAULT now()
 );
 
--- 10. payroll_periods
+-- === Nhóm 4: Kỳ lương, Phụ cấp & Bảng lương ===
+
+-- 10. payroll_periods (Quản lý trạng thái mở/chốt kỳ lương theo tháng)
 CREATE TABLE IF NOT EXISTS public.payroll_periods (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     year int NOT NULL,
@@ -124,7 +135,7 @@ CREATE TABLE IF NOT EXISTS public.monthly_allowances (
     created_at timestamptz DEFAULT now()
 );
 
--- 12. payroll
+-- 12. payroll (Kết quả tính lương kèm snapshot mức lương/phụ cấp tại thời điểm tính)
 CREATE TABLE IF NOT EXISTS public.payroll (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     period_id uuid NOT NULL REFERENCES public.payroll_periods(id),
@@ -142,6 +153,8 @@ CREATE TABLE IF NOT EXISTS public.payroll (
     calculated_at timestamptz DEFAULT now(),
     UNIQUE (period_id, employee_id)
 );
+
+-- === Nhóm 5: Cấu hình Ngày lễ & Nhật ký hệ thống ===
 
 -- 13. holidays
 CREATE TABLE IF NOT EXISTS public.holidays (

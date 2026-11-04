@@ -195,6 +195,7 @@ export type Database = {
           hourly_rate: number
           fixed_allowance: number
           is_active: boolean
+          home_branch_id: string | null
           created_at: string
           updated_at: string
         }
@@ -206,6 +207,7 @@ export type Database = {
           hourly_rate?: number
           fixed_allowance?: number
           is_active?: boolean
+          home_branch_id?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -217,10 +219,19 @@ export type Database = {
           hourly_rate?: number
           fixed_allowance?: number
           is_active?: boolean
+          home_branch_id?: string | null
           created_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "employees_home_branch_id_fkey"
+            columns: ["home_branch_id"]
+            isOneToOne: false
+            referencedRelation: "branches"
+            referencedColumns: ["id"]
+          }
+        ]
       }
       holidays: {
         Row: {
@@ -526,7 +537,6 @@ export type Database = {
       shift_templates: {
         Row: {
           id: string
-          branch_id: string
           name: string
           start_time: string
           end_time: string
@@ -534,7 +544,6 @@ export type Database = {
         }
         Insert: {
           id?: string
-          branch_id: string
           name: string
           start_time: string
           end_time: string
@@ -542,21 +551,12 @@ export type Database = {
         }
         Update: {
           id?: string
-          branch_id?: string
           name?: string
           start_time?: string
           end_time?: string
           created_at?: string
         }
-        Relationships: [
-          {
-            foreignKeyName: "shift_templates_branch_id_fkey"
-            columns: ["branch_id"]
-            isOneToOne: false
-            referencedRelation: "branches"
-            referencedColumns: ["id"]
-          }
-        ]
+        Relationships: []
       }
       shifts: {
         Row: {
@@ -627,9 +627,40 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_manual_punch: {
+        Args: {
+          p_employee_id: string
+          p_branch_id: string
+          p_type: string
+          p_at: string
+          p_reason: string
+        }
+        Returns: string
+      }
+      admin_create_employee_with_pin: {
+        Args: {
+          p_id: string
+          p_employee_code: string
+          p_full_name: string
+          p_role: string
+          p_hourly_rate: number
+          p_fixed_allowance: number
+          p_pin: string
+          p_home_branch_id?: string | null
+        }
+        Returns: undefined
+      }
       approve_shifts: {
         Args: {
           p_shift_ids: string[]
+        }
+        Returns: undefined
+      }
+      // Duyệt danh sách ca làm việc và tùy chọn chuyển sang chi nhánh đích trong cùng giao dịch
+      approve_shifts_at_branch: {
+        Args: {
+          p_shift_ids: string[]
+          p_branch_id?: string | null
         }
         Returns: undefined
       }
@@ -670,6 +701,27 @@ export type Database = {
           is_active: boolean
         }[]
       }
+      fn_calculate_payroll_base: {
+        Args: {
+          p_period_id: string
+          p_employee_id?: string
+        }
+        Returns: {
+          employee_id: string
+          hourly_rate_snapshot: number
+          fixed_allowance_snapshot: number
+          minutes_regular_day: number
+          minutes_regular_night: number
+          minutes_ot_day: number
+          minutes_ot_night: number
+          minutes_holiday_day: number
+          minutes_holiday_night: number
+          hourly_pay_subtotal: number
+          total_allowance: number
+          total_salary: number
+          block_details: Json
+        }[]
+      }
       kiosk_lookup: {
         Args: {
           p_employee_code: string
@@ -705,6 +757,31 @@ export type Database = {
           p_new_pin: string
         }
         Returns: Json
+      }
+      reject_shifts: {
+        Args: {
+          p_shift_ids: string[]
+        }
+        Returns: undefined
+      }
+      set_branch_managers: {
+        Args: {
+          p_branch_id: string
+          p_manager_ids: string[]
+        }
+        Returns: undefined
+      }
+      // Gợi ý mã nhân viên số hợp lệ tiếp theo (max + 1, tối thiểu 1001, tối đa 999999) cho Admin
+      suggest_next_employee_code: {
+        Args: Record<PropertyKey, never>
+        Returns: string
+      }
+      void_punch: {
+        Args: {
+          p_punch_id: string
+          p_reason: string
+        }
+        Returns: undefined
       }
     }
     Enums: {

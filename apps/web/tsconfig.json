@@ -5,7 +5,6 @@
     "jsx": "react-jsx",
     "types": ["node", "vite/client", "vite-plugin-pwa/client"],
     "noEmit": true,
-    "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"]
     }
