@@ -115,9 +115,15 @@ export async function safePunch(employeeCode: string, pin: string, action: Kiosk
   }
 }
 
-export async function pairDevice<T = unknown>(code: string): Promise<T> {
-  return apiFetch<T>('/api/devices/pair', {
+// Phiên kiosk do Worker cấp; setssion lưu vào localStorage và tự gia hạn bằng refresh token.
+export async function pairDevice(code: string): Promise<void> {
+  const res = await apiFetch<{acessToken: string, refreshToken: string}>('/api/devices/pair', {
     method: 'POST',
     body: JSON.stringify({ code }),
   });
+  const { error } = await supabase.auth.setSession({
+    access_token: res.acessToken,
+    refresh_token: res.refreshToken,
+  });
+  if (error) throw error;
 }

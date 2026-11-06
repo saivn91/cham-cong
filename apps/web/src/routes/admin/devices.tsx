@@ -20,7 +20,7 @@ interface DeviceRow {
   id: string;
   name: string;
   branch_id: string;
-  auth_user_id: string;
+  auth_user_id: string | null;
   revoked_at: string | null;
   created_at: string;
   branches?: {
@@ -33,8 +33,6 @@ interface DeviceRow {
 interface CreateDevicePayload {
   branchId: string;
   name: string;
-  email: string;
-  password: string;
 }
 
 interface CreateDeviceResponse {
@@ -55,8 +53,6 @@ function AdminDevicesPage() {
   // State cho form tạo thiết bị mới
   const [branchId, setBranchId] = useState('');
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
 
   // State hiển thị mã ghép nối (Pairing Code) dùng 1 lần sau khi tạo thành công
@@ -141,10 +137,8 @@ function AdminDevicesPage() {
       });
     },
     onSuccess: (data, variables) => {
-      // BẢO MẬT: Xóa ngay mật khẩu khỏi bộ nhớ state sau khi gửi yêu cầu thành công
-      setPassword('');
+  
       setName('');
-      setEmail('');
       setFormError(null);
 
       setPairingInfo({
@@ -159,10 +153,23 @@ function AdminDevicesPage() {
       });
     },
     onError: (err: unknown) => {
-      // BẢO MẬT: Xóa mật khẩu ngay cả khi lỗi để buộc nhập lại và tránh lưu thông tin nhạy cảm
-      setPassword('');
       const message = err instanceof Error ? err.message : 'Không thể tạo thiết bị mới.';
       setFormError(message);
+    },
+  });
+  
+  // Cấp lại mã ghép nối khi mã cũ hết hạn hoặc cần ghép lại(chỉ Admin)
+  const regenerateCodeMutation = ({
+    mutationFn: async (device: DeviceRow) => {
+      return await apiFetch<CreateDeviceResponse>('/api/devices/${device.id}/pairing-code',{method: 'POST',});
+    },
+    onSuccess: (data, device) => {
+      setPairingInfo({
+        deviceId: data.deviceId,
+        deviceName: device.name,
+        pairingCode: data.pairingCode,
+        expiresAt: data.expiresAt,
+      });
     },
   });
 
@@ -189,19 +196,29 @@ function AdminDevicesPage() {
 
     setFormError(null);
     const trimmedName = name.trim();
-    const trimmedEmail = email.trim();
 
-    if (!branchId || !trimmedName || !trimmedEmail || !password) {
-      setFormError('Vui lòng điền đầy đủ thông tin chi nhánh, tên thiết bị, email và mật khẩu.');
+    if (!branchId || !trimmedName ) {
+      setFormError('Vui lòng chọn  chi nhánh và nhập tên thiết bị.');
       return;
     }
 
     createDeviceMutation.mutate({
       branchId,
       name: trimmedName,
-      email: trimmedEmail,
-      password,
     });
+  };
+
+  const handleRegenerateClick = (device: DeviceRow) => {
+    if (!isAdmin || device.revoked_at) return;
+    
+    if (
+      device.auth_user_id && !window.confirm(
+        `Thiết bị "${device.name}" đang được ghép nối. \nKhi mã mới được nhập trên iPad khác, iPad hiện tại sec bị ngắt kết nối. Tiếp tục?`
+        )
+    ) {
+      return;
+    }
+    regenerateCodeMutation.mutate(device);
   };
 
   const handleRevokeClick = (device: DeviceRow) => {
@@ -250,7 +267,7 @@ function AdminDevicesPage() {
                 Mã ghép nối một lần cho thiết bị: {pairingInfo.deviceName}
               </h2>
               <p className="mt-1 text-sm text-indigo-800">
-                Vui lòng nhập mã này trên thiết bị để hoàn tất kích hoạt. Mã chỉ hiển thị một lần duy nhất.
+                 Trên iPad, mở trang <span className="font-mono">/kiosk/pair</span> và  nhập mã này. Mã chỉ hiển thị một lần duy nhất.
               </p>
             </div>
             <button
@@ -293,7 +310,7 @@ function AdminDevicesPage() {
         <section className="rounded-lg border border-gray-200 bg-white p-6 shadow-sm">
           <h2 className="text-lg font-semibold text-gray-900">Thêm thiết bị mới</h2>
           <p className="mt-1 text-sm text-gray-500">
-            Tạo tài khoản định danh thiết bị và nhận mã ghép nối dùng một lần.
+            Tạo thiết bị và nhận mã ghép nối dùng một lần.
           </p>
 
           {formError && (
@@ -302,7 +319,7 @@ function AdminDevicesPage() {
             </div>
           )}
 
-          <form onSubmit={handleCreateSubmit} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <form onSubmit={handleCreateSubmit} className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="device-branch" className="block text-sm font-medium text-gray-700">
                 Chi nhánh
@@ -340,41 +357,7 @@ function AdminDevicesPage() {
               />
             </div>
 
-            <div>
-              <label htmlFor="device-email" className="block text-sm font-medium text-gray-700">
-                Email định danh thiết bị
-              </label>
-              <input
-                id="device-email"
-                type="email"
-                autoComplete="off"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                disabled={createDeviceMutation.isPending}
-                placeholder="pos01.cn1@domain.local"
-                required
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label htmlFor="device-password" className="block text-sm font-medium text-gray-700">
-                Mật khẩu khởi tạo
-              </label>
-              <input
-                id="device-password"
-                type="password"
-                autoComplete="new-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={createDeviceMutation.isPending}
-                placeholder="••••••••"
-                required
-                className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-              />
-            </div>
-
-            <div className="sm:col-span-2 lg:col-span-4 flex justify-end pt-2">
+            <div className="sm:col-span-2 flex justify-end pt-2">
               <button
                 type="submit"
                 disabled={createDeviceMutation.isPending}
@@ -384,7 +367,7 @@ function AdminDevicesPage() {
               </button>
             </div>
           </form>
-        </section>
+        </section>    
       )}
 
       {/* Bảng danh sách thiết bị */}
@@ -399,6 +382,13 @@ function AdminDevicesPage() {
             {revokeDeviceMutation.error instanceof Error
               ? revokeDeviceMutation.error.message
               : 'Đã xảy ra lỗi không xác định.'}
+          </div>
+        )}
+        
+        {regenerateCodeMutation.isError && (
+          <div className="m-4 rounded-md bg-red-50 p-3 text-sm text-red-700">
+            Lỗi tạo mã ghép nối:{' '}
+          {regenerateCodeMutation.error instanceof Error ? regenerateCodeMutation.error.message : 'Đã xảy ra lỗi không xác định.'}
           </div>
         )}
 
@@ -448,7 +438,7 @@ function AdminDevicesPage() {
                         {branchDisplay}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 font-mono text-xs text-gray-500">
-                        {device.auth_user_id}
+                        {device.auth_user_id ?? 'Chưa ghép nối'}
                       </td>
                       <td className="whitespace-nowrap px-6 py-4 text-gray-600">
                         {new Date(device.created_at).toLocaleString('vi-VN')}
@@ -467,7 +457,16 @@ function AdminDevicesPage() {
                       {isAdmin && (
                         <td className="whitespace-nowrap px-6 py-4 text-right">
                           {!isRevoked ? (
-                            <button
+                  <div className="flex justify-end gap-2">
+                    <button
+                    type="button"
+                    onClick={() => handleRegenerateClick(device)}
+                 disabled={regenerateCodeMutation.isPending}
+                              className="rounded-md bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                            >
+                  Tạo mã ghép nối
+                            </button>
+                    <button
                               type="button"
                               onClick={() => handleRevokeClick(device)}
                               disabled={revokeDeviceMutation.isPending}
@@ -475,6 +474,7 @@ function AdminDevicesPage() {
                             >
                               Thu hồi
                             </button>
+                  </div>
                           ) : (
                             <span className="text-xs text-gray-400">Đã vô hiệu</span>
                           )}

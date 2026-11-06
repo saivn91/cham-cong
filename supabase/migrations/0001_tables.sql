@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS public.manager_branches (
 -- 5. devices (Thiết bị Kiosk gắn với tài khoản auth và chi nhánh)
 CREATE TABLE IF NOT EXISTS public.devices (
     id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    auth_user_id uuid UNIQUE REFERENCES auth.users(id) ON DELETE CASCADE,
+    auth_user_id uuid UNIQUE REFERENCES auth.users(id) ON DELETE SET NULL,
     branch_id uuid NOT NULL REFERENCES public.branches(id),
     name text,
     revoked_at timestamptz,
@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS public.device_pairings (
     device_id uuid REFERENCES public.devices(id) ON DELETE CASCADE,
     expires_at timestamptz NOT NULL DEFAULT (now() + interval '10 minutes'),
     used_at timestamptz,
+    failed_attempts int NOT NULL DEFAULT 0,
     created_at timestamptz DEFAULT now()
 );
 

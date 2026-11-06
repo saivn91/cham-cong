@@ -35,12 +35,10 @@ export const resetPasswordPayloadSchema = z.object({
   password: z.string().min(8, 'Mật khẩu tối thiểu 8 ký tự'),
 });
 
-// Xác thực đăng ký kiosk: yêu cầu mật khẩu mạnh tối thiểu 12 ký tự
+// Xác thực đăng ký kiosk
 export const createDevicePayloadSchema = z.object({
   branchId: z.string().uuid(),
   name: z.string().min(1).max(100),
-  email: z.string().email('Email kiosk không hợp lệ'),
-  password: z.string().min(12, 'Mật khẩu kiosk tối thiểu 12 ký tự'),
 });
 
 // Xác thực ghép nối kiosk: bắt buộc mã gồm đúng 6 chữ số

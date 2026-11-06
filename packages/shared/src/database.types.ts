@@ -91,6 +91,7 @@ export type Database = {
           device_id: string | null
           expires_at: string
           used_at: string | null
+          failed_attempts: number
           created_at: string
         }
         Insert: {
@@ -99,6 +100,7 @@ export type Database = {
           device_id?: string | null
           expires_at: string
           used_at?: string | null
+          failed_attempts?: number
           created_at?: string
         }
         Update: {
@@ -107,6 +109,7 @@ export type Database = {
           device_id?: string | null
           expires_at?: string
           used_at?: string | null
+          failed_attempts?: number
           created_at?: string
         }
         Relationships: [
@@ -750,6 +753,13 @@ export type Database = {
           p_employee_id?: string
         }
         Returns: Json
+      }
+      regenerate_paring_code:{
+        Args: {
+          p_device_id: string
+          p_code_hash: string
+        }
+        Return: Json
       }
       reset_pin: {
         Args: {

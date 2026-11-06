@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { createFileRoute, Navigate } from '@tanstack/react-router';
-import { EMPLOYEE_CODE_REGEX, employeeCodeToEmail } from '@timekeeping/shared/auth';
+import { EMPLOYEE_CODE_REGEX, employeeEmail } from '@timekeeping/shared/auth';
 import { useAuth } from '../lib/auth-context';
 
 // Route đăng nhập công khai, tách biệt khỏi các luồng đã xác thực
@@ -57,7 +57,7 @@ function LoginPage() {
         setErrorMsg('Mã nhân viên không hợp lệ (gồm 4-6 chữ số, không bắt đầu bằng số 0).');
         return;
       }
-      loginEmail = employeeCodeToEmail(trimmedIdentifier);
+      loginEmail = employeeEmail(trimmedIdentifier);
     } else {
       loginEmail = trimmedIdentifier.toLowerCase();
     }

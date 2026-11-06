@@ -835,8 +835,90 @@ END;
 $$;
 
 -- ============================================================================
--- 7. Device Pairing RPCs
+-- 7. Device Pairing (iPad chỉ nhập mã; Worker/service_role tiêu thụ mã và tự tạo tài khoản kiosk)
 -- ============================================================================
+-- Tài khoản gắn với thiết bị phải là kiosk và không phải là nhân viên.
+CREATE OR REPLACE FUNCTION private.ensure_device_user_is_kiosk()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, private, pg_temp
+AS $$
+BEGIN
+    IF NEW.auth_user_id IS NOT NULL AND (
+        EXISTS (SELECT 1 public.employees e WHERE e.id = NEW.auth_user_id)
+        OR NOT EXISTS (
+            SELECT 1
+            FROM auth.users u
+            WHERE u.id = NEW.auth_user_id
+                AND u.raw_app_meta_data ->> 'role' = 'kiosk'
+        )
+    ) THEN
+        RAISE EXCEPTION 'DEVICE_USER_MUST_BE_KIOSK' USING ERRCODE = '42501';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_devices_user_is_kiosk ON public.devices;
+CREATE TRIGGER trg_devices_user_is_kiosk
+    BEFORE INSERT OR UPDATE OF auth_user_id ON public.devices
+    FOR EACH ROW
+    EXECUTE FUNCTION private.ensure_device_user_is_kiosk();
+
+CREATE OR REPLACE FUNCTION public.regenerate_pairing_code(
+    p_device_id uuid,
+    p_code_hash text
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, private, pg_temp
+AS $$
+DECLARE
+    v_pairing_id uuid;
+    v_expires_at timestamptz := now() + interval '10 minutes';
+BEGIN
+    IF NOT private.is_admin() THEN
+        RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
+    END IF;
+
+    -- Khóa dòng thiết bị để hai lần cấp mã đồng thời không cùng tạo ra mã còn hiệu lực.
+    PERFORM 1
+    FROM public.devices
+    WHERE id = p_device_id
+        AND revoked_at IS NULL
+    FOR UPDATE;
+    
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'DEVICE_NOT_FOUND_OR_REVOKE' USING ERRCODE = 'P0002';
+    END IF;
+    
+    -- Mỗi thiết bị chỉ có một mã còn hiệu lực.
+    UPDATE public.device_pairings
+    SET expires_at = now()
+    WHERE device_id = p_device_id
+        AND used_at IS NULL
+        AND expires_at > now();
+        
+    -- code_hash là UNIQUE vĩnh viễn trong khi mã 6 số sẽ lặp lại theo thời gian.
+    DELETE FROM public.device_pairings
+    WHERE code_hash = p_code_hash
+        AND (used_at IS NOT NULL OR expires_at <= now());
+    
+    INSERT INTO public.device_pairings (code_hash, device_id, expires_at)
+    VALUES (p_code_hash, p_device_id, v_expires_at)
+    RETURNING id INTO v_pairing_id;
+    
+    RETURN json_build_object(
+        'ok', true,
+        'device_id', p_device_id,
+        'pairing_id', v_pairing_id,
+        'expires_at', v_expires_at
+    );
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.new_pairing_code(
     p_code_hash text,
     p_branch_id uuid,
@@ -849,31 +931,20 @@ SET search_path = public, private, pg_temp
 AS $$
 DECLARE
     v_device_id uuid;
-    v_pairing_id uuid;
-    v_expires_at timestamptz := now() + interval '10 minutes';
 BEGIN
-    -- Admin tạo device chờ ghép nối; chỉ lưu hash mã pairing, hết hạn sau 10 phút.
     IF NOT private.is_admin() THEN
         RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
     END IF;
 
-    INSERT INTO public.devices (branch_id, name, auth_user_id, revoked_at)
-    VALUES (p_branch_id, p_device_name, NULL, NULL)
+    INSERT INTO public.devices (branch_id, name)
+    VALUES (p_branch_id, p_device_name)
     RETURNING id INTO v_device_id;
 
-    INSERT INTO public.device_pairings (code_hash, device_id, expires_at, used_at)
-    VALUES (p_code_hash, v_device_id, v_expires_at, NULL)
-    RETURNING id INTO v_pairing_id;
-
-    RETURN json_build_object(
-        'ok', true,
-        'device_id', v_device_id,
-        'pairing_id', v_pairing_id,
-        'expires_at', v_expires_at
-    );
+    RETURN public.regenerate_pairing_code(v_device_id, p_code_hash);
 END;
 $$;
 
+-- Chỉ Worker (service_role) được gọi: Worker tự tạo tài khoản kiosk sau khi mã hợp lệ.
 CREATE OR REPLACE FUNCTION public.consume_pairing_code(
     p_code_hash text
 )
@@ -883,44 +954,53 @@ SECURITY DEFINER
 SET search_path = public, private, pg_temp
 AS $$
 DECLARE
-    v_uid uuid := auth.uid();
     v_pairing_id uuid;
     v_device_id uuid;
+    v_previous_user_id uuid;
 BEGIN
-    -- Mã pairing dùng một lần; khóa SKIP LOCKED chống hai kiosk cùng tiêu thụ một mã.
-    IF v_uid IS NULL THEN
-        RAISE EXCEPTION 'UNAUTHENTICATED' USING ERRCODE = '28000';
+    IF COALESCE(auth.role(), '') <> 'service_role' THEN
+        RAISE EXCEPTION 'FORBIDDEN' USING ERRCODE = '42501';
     END IF;
 
-    SELECT id, device_id
+    SELECT dp.id, dp.device_id
     INTO v_pairing_id, v_device_id
-    FROM public.device_pairings
-    WHERE code_hash = p_code_hash
-      AND used_at IS NULL
-      AND expires_at > now()
-    FOR UPDATE SKIP LOCKED
-    LIMIT 1;
+    FROM public.device_pairings dp
+    WHERE dp.code_hash = p_code_hash
+      AND dp.used_at IS NULL
+      AND dp.expires_at > now()
+      AND dp.failed-attempts < 10
+    FOR UPDATE;
 
     IF v_pairing_id IS NULL THEN
-        RAISE EXCEPTION 'INVALID_OR_EXPIRED_CODE' USING ERRCODE = 'P0002';
+        -- Endpoint công khai: mỗi lần đoán sai trừ vào mọi mã đang hiệu lực để giới hạn số lần dò mỗi mã.
+        UPDATE public.device_pairings
+        SET failed_attempts = failed_attempts + 1
+        WHERE used_at IS NULL
+            AND expires_at > now()
+            AND failed_attempts < 10;
+        
+        RETURN json_build_object('ok', false, 'error', 'INVALID_OR_EXPIRED_CODE');
     END IF;
 
     UPDATE public.device_pairings
     SET used_at = now()
     WHERE id = v_pairing_id;
 
-    UPDATE public.devices
-    SET auth_user_id = v_uid
-    WHERE id = v_device_id
-      AND revoked_at IS NULL;
+    SELECT d.auth_user_id
+    INTO v_previous_user_id
+    FROM public.devices d
+    WHERE d.id = v_device_id
+      AND d.revoked_at IS NULL;
 
     IF NOT FOUND THEN
-        RAISE EXCEPTION 'DEVICE_REVOKED_OR_MISSING' USING ERRCODE = 'P0002';
+        RETURN json_build_object('ok', false, 'error', 'DEVICE_REVOKED');
     END IF;
 
+    -- Trả tài khoản kiosk cũ(nếu có) để Worker khóa khi ghép lại.
     RETURN json_build_object(
         'ok', true,
-        'device_id', v_device_id
+        'device_id', v_device_id,
+        'previous_auth_user_id', v_previous_user_id
     );
 END;
 $$;
@@ -1807,8 +1887,14 @@ GRANT EXECUTE ON FUNCTION public.reset_pin(uuid, text) TO authenticated, service
 REVOKE ALL ON FUNCTION public.new_pairing_code(text, uuid, text) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.new_pairing_code(text, uuid, text) TO authenticated, service_role;
 
-REVOKE ALL ON FUNCTION public.consume_pairing_code(text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.consume_pairing_code(text) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.regenerate_pairing_code(uuid, text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.regenerate_pairing_code(uuid, text) TO authenticated, service_role;
+
+REVOKE ALL ON FUNCTION public.consume_pairing_code(text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.consume_pairing_code(text) TO service_role;
+
+REVOKE ALL ON FUNCTION private.ensure_device_user_is_kiosk() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION private.ensure_device_user_is_kiosk() TO authenticated, service_role;
 
 REVOKE ALL ON FUNCTION public.preview_timesheet(uuid, uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.preview_timesheet(uuid, uuid) TO authenticated, service_role;

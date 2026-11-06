@@ -21,17 +21,14 @@ export const ROLE_LABELS: Record<AppRole, string> = {
 // Biểu thức chính quy kiểm tra mã nhân viên số: 4–6 chữ số, không bắt đầu bằng chữ số 0 (1000..999999)
 export const EMPLOYEE_CODE_REGEX = /^[1-9][0-9]{3,5}$/;
 
-// Tên miền email nội bộ cố định (synthetic email) ánh xạ 1-1 từ mã nhân viên sang Supabase Auth
-export const EMPLOYEE_EMAIL_DOMAIN = 'staff.chamcong.invalid';
+// Email nội bộ cho Supabase Auth, không bao giờ gửi thư tới đây.
+export const AUTH_EMAIL_DOMAIN = 'chamcong.local';
 
-// Chuẩn hóa, kiểm tra định dạng mã nhân viên số và sinh địa chỉ synthetic email dùng chung cho FE/Worker
-export function employeeCodeToEmail(employeeCode: string): string {
-  const normalized = employeeCode.trim();
-  if (!EMPLOYEE_CODE_REGEX.test(normalized)) {
-    throw new Error('INVALID_EMPLOYEE_CODE');
-  }
-  return `${normalized}@${EMPLOYEE_EMAIL_DOMAIN}`;
-}
+const DEVICE_EMAIL_SUFFIX = `@kiosk.${AUTH_EMAIL_DOMAIN}`;
+
+export const employeeEmail =  (employeeCode: string) => `${employeeCode.trim().toLowerCase()}@nv.${EMPLOYEE_EMAIL_DOMAIN}`;
+
+export const deviceEmail =  (deviceId: string) => `${deviceId}${DEVICE_EMAIL_SUFFIX}`;
 
 // Kiểm tra giá trị có phải là AppRole hợp lệ
 export function isAppRole(value: unknown): value is AppRole {
